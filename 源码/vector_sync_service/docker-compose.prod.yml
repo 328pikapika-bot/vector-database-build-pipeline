@@ -1,0 +1,270 @@
+services:
+  vector-sync-service:
+    image: docker-hosted.example.invalid/nstl/vector-sync-service:latest
+    container_name: vector-sync-service
+    init: true
+    ports:
+      - "8700:8700"
+    volumes:
+      - vector-sync-upload:/app/upload
+      - vector-sync-out:/app/out
+      - vector-sync-runtime:/app/.runtime
+    environment:
+      # ---- 运行环境 ----
+      ENV: prod
+      TZ: Asia/Shanghai
+      UPLOAD_DIR: /app/upload
+      KAFKA_DUMP_FILE: /app/out/kafka_messages.jsonl
+      KAFKA_ERROR_DUMP_FILE: /app/out/kafka_messages_error.jsonl
+      KAFKA_PROCESSED_DUMP_FILE: /app/out/kafka_messages_processed.jsonl
+
+      # ---- Kafka 集群 (SASL_PLAINTEXT) ----
+      KAFKA_BOOTSTRAP_SERVERS: 127.0.0.1:9092,127.0.0.1:9092,127.0.0.1:9092,127.0.0.1:9092,127.0.0.1:9092,127.0.0.1:9092
+      KAFKA_TOPIC: VECTOR_JOURNAL_ARTICLE
+      KAFKA_GROUP_ID: python_consumer_group_scientific_20260617
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:?KAFKA_SASL_USERNAME is required}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD}
+      KAFKA_CONSUMER_ENABLED: "true"
+      KAFKA_CONSUME_LIMIT: "0"
+      KAFKA_MAX_POLL_INTERVAL_MS: "1800000"
+      KAFKA_SESSION_TIMEOUT_MS: "30000"
+      KAFKA_HEARTBEAT_INTERVAL_MS: "10000"
+
+      # ---- Source data (test Solr) ----
+      SOLR_PAPER_URL: http://solr-bak1.example.invalid:8984/solr/paper6.6
+      SOLR_IMAGE_URL: http://solr-bak1.example.invalid:8984/solr/standard6.6
+      SOLR_REQUEST_TIMEOUT_SEC: "20"
+      SOLR_IMAGE_ROWS: "1000"
+
+      # ---- MongoDB ----
+      MONGO_URI: "${MONGO_URI:?MONGO_URI is required}"
+      MONGO_DB: nstl_vector_sync_scientific_prod
+      # Keep Mongo for failures and retry payloads only; successful metadata is not audited.
+      MONGO_SUCCESS_AUDIT_ENABLED: "false"
+
+      # ---- Milvus (通过 milvus 网络直连) ----
+      MILVUS_HOST: 127.0.0.1
+      MILVUS_PORT: "19533"
+      MILVUS_COLLECTION: scientific_documents_v2
+      FULLTEXT_CHUNK_COLLECTION: scientific_fulltext_chunks_v2
+      FULLTEXT_CHUNK_WRITE_MODE: safe_replace
+      FULLTEXT_CHUNK_VISIBILITY_STRICT: "true"
+      IMAGE_COLLECTION_NAME: scientific_images_v2
+      INIT_VECTOR_COLLECTIONS_ON_STARTUP: "false"
+
+      # ---- Embedding API ----
+      EMBEDDING_API_URL: http://127.0.0.1:16703/v1/embeddings
+      EMBEDDING_API_KEY: "${EMBEDDING_API_KEY}"
+      EMBEDDING_MODEL: qwen3-embed
+      EMBEDDING_RATE_LIMIT_ENABLED: "true"
+      EMBEDDING_TEXT_BURST: "32"
+      EMBEDDING_MAX_CONCURRENCY: "160"
+      EMBEDDING_TIMEOUT: "45"
+      # Enable metadata_bulk only on a dedicated metadata consumer.  This
+      # combined service stays standard so it continues to create fulltext/image tasks.
+      SYNC_PIPELINE_MODE: standard
+      BATCH_MAX_SIZE: "512"
+      BATCH_MAX_WAIT_MS: "1500"
+      KAFKA_CONSUMER_MICRO_BATCH_SIZE: "512"
+      EMBEDDING_BATCH_SIZE: "64"
+      DOCUMENT_BULK_PIPELINE_ENABLED: "true"
+      DOCUMENT_BULK_MILVUS_BATCH_SIZE: "512"
+      # Effective only for a dedicated SYNC_PIPELINE_MODE=metadata_bulk service.
+      DOCUMENT_BULK_PIPELINE_INFLIGHT_BATCHES: "2"
+
+      # ---- Auto Publish (Kafka 数据投递) ----
+      AUTO_PUBLISH_ENABLED: "false"
+      PUBLISH_BATCH_URL: http://127.0.0.1:17123/api/service/interfaces/vector/job/publishBatch
+      PUBLISH_BATCH_TOKEN: "${PUBLISH_BATCH_TOKEN:?PUBLISH_BATCH_TOKEN is required}"
+      PUBLISH_BATCH_SUB_DOC_TYPE: A79
+      PUBLISH_BATCH_START_PAGE: "1"
+      PUBLISH_BATCH_END_PAGE: "0"
+      PUBLISH_BATCH_PAGES_PER_ROUND: "100"
+      PUBLISH_BATCH_PENDING_THRESHOLD: "8000"
+      PUBLISH_BATCH_CHECK_INTERVAL_SEC: "10"
+      PUBLISH_BATCH_TIMEOUT_SEC: "300"
+      PUBLISH_BATCH_ASSUME_TIMEOUT_SUCCESS: "true"
+      PUBLISH_BATCH_INTERVAL_SEC: "0.5"
+      PUBLISH_BATCH_BACKPRESSURE_MODE: image_priority
+      RETENTION_CLEANUP_ENABLED: "false"
+      IMAGE_LOCAL_SUCCESS_RETENTION_HOURS: "24"
+      LOCAL_FAILED_RETENTION_DAYS: "15"
+      IMAGE_MILVUS_WRITE_MODE: upsert
+      IMAGE_VECTOR_SCHEMA_MODE: visual_caption_context_4_vector
+      IMAGE_DENSE_INDEX_TYPE: IVFPQ
+      IMAGE_DENSE_INDEX_METRIC_TYPE: IP
+      IMAGE_DENSE_IVFPQ_NLIST: "4096"
+      IMAGE_DENSE_IVFPQ_M: "64"
+      IMAGE_DENSE_IVFPQ_NBITS: "8"
+      IMAGE_DENSE_IVFPQ_NPROBE: "16"
+      IMAGE_RUNTIME_ATTACHMENT_MODE: full
+
+      # ---- Full-text Worker (关闭，跑完元数据再开) ----
+      FULLTEXT_WORKER_ENABLED: "true"
+      FULLTEXT_TASK_UPSERT_ENABLED: "true"
+      FULLTEXT_WORKER_BATCH_SIZE: "150"
+      FULLTEXT_WORKER_CONCURRENCY: "24"
+      FULLTEXT_WORKER_CLAIM_CREATED_AFTER: ""
+      FULLTEXT_WORKER_POLL_INTERVAL_SEC: "1"
+      FULLTEXT_WORKER_TASK_TIMEOUT_SEC: "300"
+      FULLTEXT_WORKER_MIN_TASK_TIMEOUT_SEC: "300"
+
+      # ---- Image Worker (关闭，跑完元数据再开) ----
+      IMAGE_WORKER_ENABLED: "true"
+      IMAGE_FEATURE_PIPELINE_ENABLED: "true"
+      IMAGE_TASK_UPSERT_ENABLED: "true"
+      IMAGE_WORKER_BATCH_SIZE: "512"
+      IMAGE_WORKER_CONCURRENCY: "56"
+      IMAGE_WORKER_LEASE_SEC: "240"
+      IMAGE_WORKER_TASK_TIMEOUT_SEC: "150"
+      IMAGE_DOWNLOAD_TIMEOUT: "30"
+      IMAGE_DOWNLOAD_CONCURRENCY: "64"
+      IMAGE_MMD_DOWNLOAD_TIMEOUT: "15"
+      IMAGE_MMD_DOWNLOAD_MAX_RETRIES: "0"
+      IMAGE_MMD_HOT_PATH_MODE: background
+      IMAGE_VISUAL_EMBED_ENABLED: "true"
+      IMAGE_TEXT_INDEX_POLICY: verified_only
+      IMAGE_ALLOW_DOCUMENT_TITLE_CONTEXT_FALLBACK: "false"
+      IMAGE_MMD_CONTEXT_REQUIRED_FOR_TEXT_INDEX: "true"
+      IMAGE_QUALITY_AUDIT_ENABLED: "true"
+      IMAGE_QUALITY_PIPELINE_VERSION: image-quality-v1
+      IMAGE_FEATURE_TIMEOUT: "45"
+      IMAGE_FEATURE_TOTAL_TIMEOUT_SEC: "120"
+      IMAGE_VL_CHAT_CONCURRENCY: "8"
+      IMAGE_VL_EMBED_CONCURRENCY: "32"
+      IMAGE_TEXT_EMBED_CONCURRENCY: "64"
+      IMAGE_TEXT_EMBED_RATE: "100"
+      IMAGE_TEXT_EMBED_BATCH_SIZE: "32"
+      IMAGE_TEXT_EMBED_BATCH_DELAY_MS: "10"
+      IMAGE_MILVUS_WRITE_CONCURRENCY: "8"
+      IMAGE_MILVUS_WRITE_BATCH_SIZE: "128"
+      IMAGE_MILVUS_WRITE_FLUSH_INTERVAL_MS: "500"
+      IMAGE_HTTP_POOL_MAX_CONNECTIONS: "2048"
+      IMAGE_HTTP_POOL_MAX_KEEPALIVE: "256"
+      IMAGE_MODEL_HTTP_POOL_MAX_CONNECTIONS: "64"
+      IMAGE_MODEL_HTTP_POOL_MAX_KEEPALIVE: "32"
+      IMAGE_MODEL_TOTAL_CONCURRENCY: "32"
+      IMAGE_MODEL_INPUT_FORMAT: jpeg
+      IMAGE_MODEL_INPUT_MAX_PIXELS: "1200000"
+      IMAGE_MODEL_INPUT_MAX_SIDE: "1280"
+      IMAGE_MODEL_INPUT_JPEG_QUALITY: "82"
+      IMAGE_MODEL_INPUT_MIN_JPEG_QUALITY: "70"
+      IMAGE_MODEL_INPUT_MAX_BYTES: "512000"
+      IMAGE_VL_EMBED_URL: http://127.0.0.1:16703/v1/embeddings
+      IMAGE_VL_EMBED_MODEL: qwen3-vl-embed
+      IMAGE_TEXT_EMBED_URL: http://127.0.0.1:16703/v1/embeddings
+      IMAGE_TEXT_EMBED_MODEL: qwen3-embed
+      IMAGE_MODEL_API_KEY: "${IMAGE_MODEL_API_KEY}"
+
+      # ---- Failure compensator (keep historical failures frozen) ----
+      COMPENSATOR_ENABLED: "false"
+      COMPENSATOR_INTERVAL_SEC: "300"
+      COMPENSATOR_RUN_MODE: scheduled
+      COMPENSATOR_START_TIME: "00:00"
+      COMPENSATOR_RUN_HOURS: "2"
+      COMPENSATOR_TIMEZONE: Asia/Shanghai
+      COMPENSATOR_PIPELINES: metadata,fulltext,image
+      COMPENSATOR_BATCH_SIZE: "100"
+      COMPENSATOR_CONCURRENCY: "8"
+      COMPENSATOR_LEASE_SEC: "900"
+
+      # ---- Admin Auth ----
+      ADMIN_AUTH_ENABLED: "true"
+      ADMIN_READ_TOKENS: "${ADMIN_READ_TOKENS:?ADMIN_READ_TOKENS is required}"
+      ADMIN_WRITE_TOKENS: "${ADMIN_WRITE_TOKENS:?ADMIN_WRITE_TOKENS is required}"
+
+      # ---- Attachment ----
+      ATTACHMENT_PREFIX: http://127.0.0.1:12001/
+
+    restart: unless-stopped
+    stop_grace_period: 60s
+    networks:
+      - milvus
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8700/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '96'
+          memory: 128G
+        reservations:
+          cpus: '32'
+          memory: 32G
+
+  vector-ops-service:
+    image: docker-hosted.example.invalid/nstl/vector-sync-service:latest
+    container_name: vector-ops-service
+    init: true
+    command: ["uvicorn", "app.ops_service:app", "--host", "0.0.0.0", "--port", "8710"]
+    ports:
+      - "8710:8710"
+    volumes:
+      - vector-sync-upload:/app/upload
+      - vector-sync-out:/app/out
+      - vector-sync-runtime:/app/.runtime
+    environment:
+      ENV: prod
+      TZ: Asia/Shanghai
+      UPLOAD_DIR: /app/upload
+      MONGO_URI: "${MONGO_URI:?MONGO_URI is required}"
+      MONGO_DB: nstl_vector_sync_scientific_prod
+      MONGO_BACKUP_DB: nstl_vector_sync_scientific_backup_latest
+      OPS_SERVICE_PORT: "8710"
+      OPS_PUBLISH_ENABLED: "true"
+      OPS_CLEANUP_ENABLED: "true"
+      OPS_INSPECTION_ENABLED: "true"
+      OPS_SYNC_HEALTH_URL: http://vector-sync-service:8700/health
+      OPS_PUBLISH_SCHEDULE: "0 1 * * *"
+      OPS_CLEANUP_SCHEDULE: "0 3 * * *"
+      OPS_INSPECTION_SCHEDULE: "0 4 * * 1"
+      KAFKA_BOOTSTRAP_SERVERS: 127.0.0.1:9092,127.0.0.1:9092,127.0.0.1:9092,127.0.0.1:9092,127.0.0.1:9092,127.0.0.1:9092
+      KAFKA_TOPIC: VECTOR_JOURNAL_ARTICLE
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:?KAFKA_SASL_USERNAME is required}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD}
+      PUBLISH_BATCH_URL: http://127.0.0.1:17123/api/service/interfaces/vector/job/publishBatch
+      PUBLISH_BATCH_TOKEN: "${PUBLISH_BATCH_TOKEN:?PUBLISH_BATCH_TOKEN is required}"
+      PUBLISH_BATCH_SUB_DOC_TYPE: A79
+      PUBLISH_BATCH_START_PAGE: "1"
+      PUBLISH_BATCH_END_PAGE: "0"
+      PUBLISH_BATCH_PAGES_PER_ROUND: "100"
+      PUBLISH_BATCH_PENDING_THRESHOLD: "8000"
+      PUBLISH_BATCH_CHECK_INTERVAL_SEC: "10"
+      PUBLISH_BATCH_TIMEOUT_SEC: "300"
+      PUBLISH_BATCH_ASSUME_TIMEOUT_SUCCESS: "true"
+      PUBLISH_BATCH_INTERVAL_SEC: "0.5"
+      PUBLISH_BATCH_BACKPRESSURE_MODE: image_priority
+      IMAGE_LOCAL_SUCCESS_RETENTION_HOURS: "24"
+      LOCAL_FAILED_RETENTION_DAYS: "15"
+      RETENTION_CLEANUP_REPORT_RETENTION_DAYS: "7"
+      ADMIN_AUTH_ENABLED: "true"
+      ADMIN_READ_TOKENS: "${ADMIN_READ_TOKENS:?ADMIN_READ_TOKENS is required}"
+      ADMIN_WRITE_TOKENS: "${ADMIN_WRITE_TOKENS:?ADMIN_WRITE_TOKENS is required}"
+    restart: unless-stopped
+    stop_grace_period: 60s
+    depends_on:
+      - vector-sync-service
+    networks:
+      - milvus
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8710/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+networks:
+  milvus:
+    external: true
+
+volumes:
+  vector-sync-upload:
+  vector-sync-out:
+  vector-sync-runtime:
