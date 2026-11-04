@@ -1,0 +1,19 @@
+{
+  "hasSource": {"solr_field": "stringOM_hasSource", "max_length": 20000},
+  "hasFile": {"solr_field": "stringOM_hasFile", "max_length": 500},
+  "volume": {"solr_field": "stringIMS_volume", "max_length": 50},
+  "issue": {"solr_field": "stringIMS_issue", "max_length": 50},
+  "startPage": {"solr_field": "stringIS_startPage", "max_length": 50},
+  "endPage": {"solr_field": "stringIS_endPage", "max_length": 50},
+  "pageCount": {"solr_field": "stringIS_pageCount", "max_length": 50},
+  "createTime": {"solr_field": "dateIS_createTime", "max_length": 50},
+  "publisher": {"solr_field": "auto_stringITMS_publisher", "max_length": 100},
+  "labelEvaluateGrade": {"solr_field": "stringIMS_labelEvaluateGrade", "max_length": 100},
+  "sysProcessingUnit": {"solr_field": "stringIS_sysProcessingUnit", "max_length": 100},
+  "hasHoldinglibraryCode": {"solr_field": "stringIMS_hasHoldinglibraryCode", "max_length": 100},
+  "hasAuthor_str": {"solr_field": "stringOM_hasAuthor", "max_length": 20000},
+  "hasSource_str": {"solr_field": "stringOM_hasSource", "max_length": 20000},
+  "hasFile_str": {"solr_field": "stringOM_hasFile", "max_length": 500},
+  "hasCreateOrganization_str": {"solr_field": "stringOM_hasCreateOrganization", "max_length": 20000},
+  "entityType": {"solr_field": "stringIMS_entityType", "max_length": 50}
+}

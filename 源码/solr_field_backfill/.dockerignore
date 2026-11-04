@@ -1,0 +1,8 @@
+**
+!Dockerfile
+!.dockerignore
+!requirements.txt
+!backfill.py
+!resilient.py
+!__init__.py
+!field_mapping.json

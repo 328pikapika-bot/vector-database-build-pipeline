@@ -1,0 +1,20 @@
+.trae/
+.idea/
+__pycache__/
+*.jsonl
+
+# Local Python/runtime artifacts
+.venv/
+venv/
+vector_sync_service/.venv/
+vector_sync_service/.runtime/
+vector_sync_service/upload/
+*.log
+
+# Local Kafbat UI credentials
+kafbat-ui/.env
+
+.env
+.env.*
+!.env.example
+!.env.template
