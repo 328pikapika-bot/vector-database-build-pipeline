@@ -1,0 +1,115 @@
+name: scientific-milvus-replica
+
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.25
+    container_name: scientific-milvus-etcd
+    restart: unless-stopped
+    environment:
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+      ETCD_AUTO_COMPACTION_MODE: revision
+    command:
+      - etcd
+      - -advertise-client-urls=http://etcd:2379
+      - -listen-client-urls
+      - http://0.0.0.0:2379
+      - --data-dir
+      - /etcd
+    volumes:
+      - type: bind
+        source: ${REPLICA_DATA_ROOT}/data/etcd
+        target: /etcd
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      replica:
+        aliases: [etcd]
+
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: scientific-milvus-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+    command: ["minio", "server", "/minio_data", "--console-address", ":9001"]
+    ports:
+      - "19004:9000"
+      - "19005:9001"
+    volumes:
+      - type: bind
+        source: ${REPLICA_DATA_ROOT}/data/minio
+        target: /minio_data
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      replica:
+        aliases: [minio]
+
+  standalone:
+    image: milvusdb/milvus:v2.6.9
+    container_name: scientific-milvus-standalone
+    restart: unless-stopped
+    environment:
+      MINIO_ADDRESS: scientific-milvus-minio:9000
+      MQ_TYPE: rocksmq
+      ETCD_ENDPOINTS: scientific-milvus-etcd:2379
+    command:
+      - sh
+      - -c
+      - |
+        printf 'proxy:\n  maxVectorFieldNum: 10\n  maxFieldNum: 200\n' > /milvus/configs/user.yaml
+        exec milvus run standalone
+    ports:
+      - "19533:19530"
+      - "9094:9091"
+    volumes:
+      - type: bind
+        source: ${REPLICA_DATA_ROOT}/data/milvus
+        target: /var/lib/milvus
+        bind:
+          create_host_path: false
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      start_period: 90s
+      retries: 3
+    networks: [replica]
+
+  attu:
+    image: zilliz/attu:v2.6.5
+    container_name: scientific-milvus-attu
+    restart: unless-stopped
+    environment:
+      HOST_URL: http://${TARGET_HOST}:18002
+      MILVUS_URL: scientific-milvus-standalone:19530
+      MILVUS_ADDRESS: scientific-milvus-standalone:19530
+    ports:
+      - "18002:3000"
+    depends_on:
+      standalone:
+        condition: service_healthy
+    networks: [replica]
+
+networks:
+  replica: {}

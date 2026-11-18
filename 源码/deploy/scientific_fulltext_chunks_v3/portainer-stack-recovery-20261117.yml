@@ -1,0 +1,110 @@
+# 231 全文 V3 复制恢复配置；仅管理本任务的程序和面板。
+# 已部署使用本机现有镜像构建的恢复镜像；不包含、不重启任何 Milvus 服务。
+# --pid=host 只用于读取 Milvus 进程资源，运行账户沿用原任务 root。
+# 如 Milvus 重启，须先核对新的宿主机 PID 和未确认批次，再更新 V3_MILVUS_PID。
+# 禁止直接重复部署一套同名/同前缀任务；保留现有 runtime 数据与备份。
+# host 网络用于已有 19533 数据接口及本机 9093/9094/9095 健康检查。
+x-worker: &worker
+  image: scientific_fulltext_chunks_v3_worker:20261117-recovery
+  user: "0:0"
+  network_mode: host
+  pid: host
+  restart: on-failure:5
+  cpus: 2
+  mem_limit: 3g
+  pids_limit: 256
+  stop_grace_period: 180s
+  volumes:
+    # 只挂载本任务的断点/校验记录；不会覆盖数据库数据或程序代码。
+    - /data/scientific_fulltext_chunks_v3/runtime:/runtime
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "3"
+  labels:
+    collection: scientific_fulltext_chunks_v3
+    role: source-id-copy-recovery
+  environment: &env
+    TZ: Asia/Shanghai
+    V3_MONITOR_LOCAL: "1"
+    V3_WORK_ROOT: /runtime
+    V3_OLD_ROOT: /runtime/old_audit
+    V3_MAX_WORKERS: "1"
+    V3_GUARD_CPU_MAX: "65"
+    V3_MILVUS_PID: "870208"
+
+services:
+  worker_01:
+    <<: *worker
+    container_name: scientific_fulltext_chunks_v3_worker_01
+    environment:
+      <<: *env
+      V3_PREFIXES: "01"
+  worker_23:
+    <<: *worker
+    container_name: scientific_fulltext_chunks_v3_worker_23
+    environment:
+      <<: *env
+      V3_PREFIXES: "23"
+  worker_45:
+    <<: *worker
+    container_name: scientific_fulltext_chunks_v3_worker_45
+    environment:
+      <<: *env
+      V3_PREFIXES: "45"
+  worker_67:
+    <<: *worker
+    container_name: scientific_fulltext_chunks_v3_worker_67
+    environment:
+      <<: *env
+      V3_PREFIXES: "67"
+  worker_89:
+    <<: *worker
+    container_name: scientific_fulltext_chunks_v3_worker_89
+    environment:
+      <<: *env
+      V3_PREFIXES: "89"
+  worker_ab:
+    <<: *worker
+    container_name: scientific_fulltext_chunks_v3_worker_ab
+    environment:
+      <<: *env
+      V3_PREFIXES: "ab"
+  worker_cd:
+    <<: *worker
+    container_name: scientific_fulltext_chunks_v3_worker_cd
+    environment:
+      <<: *env
+      V3_PREFIXES: "cd"
+  worker_ef:
+    <<: *worker
+    container_name: scientific_fulltext_chunks_v3_worker_ef
+    environment:
+      <<: *env
+      V3_PREFIXES: "ef"
+  dashboard:
+    image: scientific_fulltext_chunks_v3_dashboard:20261117-recovery
+    container_name: scientific_fulltext_chunks_v3_dashboard
+    restart: unless-stopped
+    cpus: 1
+    mem_limit: 512m
+    environment:
+      TZ: Asia/Shanghai
+      V3_WORK_ROOT: /runtime
+    ports:
+      # 宿主机 18004 -> 容器内 HTTP 8080。
+      - "18004:8080"
+    volumes:
+      # API 只读查询 SQLite；挂载可写仅供 SQLite WAL/SHM 打开。
+      - /data/scientific_fulltext_chunks_v3/runtime:/runtime
+    healthcheck:
+      # 仅检测面板 HTTP 存活，导入状态由 /api/status 独立报告。
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"

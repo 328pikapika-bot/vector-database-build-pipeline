@@ -1,0 +1,6 @@
+runtime
+*.tar.gz
+*.log
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
